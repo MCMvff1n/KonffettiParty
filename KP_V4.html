@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Konfetti Party mit Timer und Bonus</title>
+<style>
+  body {
+    margin: 0; background: #222; display: flex; justify-content: center; align-items: center; height: 100vh; user-select: none; overflow: hidden;
+    touch-action: none;
+    flex-direction: column;
+    font-family: sans-serif;
+    color: white;
+  }
+  #game {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(8, 50px);
+    grid-template-rows: repeat(8, 50px);
+    gap: 5px;
+    z-index: 1;
+  }
+  .tile {
+    width: 50px; height: 50px; border-radius: 8px; box-shadow: 0 0 8px #0005 inset; cursor: pointer;
+    transition: background-color 0.3s, transform 0.15s;
+  }
+  .tile.selected {
+    outline: 3px solid white;
+    transform: scale(1.1);
+  }
+  canvas {
+    position: fixed; top: 0; left: 0; pointer-events: none; z-index: 10;
+  }
+  #timer {
+    margin-top: 15px;
+    font-size: 24px;
+    font-weight: bold;
+    user-select: none;
+  }
+  #gameOver {
+    margin-top: 20px;
+    font-size: 28px;
+    color: #f39c12;
+    display: none;
+  }
+  #restartBtn {
+    margin-top: 10px;
+    padding: 10px 20px;
+    font-size: 18px;
+    border: none;
+    border-radius: 6px;
+    background: #3498db;
+    color: white;
+    cursor: pointer;
+    user-select: none;
+  }
+  #restartBtn:hover {
+    background: #2980b9;
+  }
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="timer">Zeit: 60s</div>
+<div id="gameOver">Game Over!</div>
+<button id="restartBtn" style="display:none;">Neu starten</button>
+<canvas id="lineCanvas"></canvas>
+
+<script>
+  const size = 8;
+  const colors = ['#e74c3c','#3498db','#2ecc71','#f1c40f','#9b59b6'];
+  let board = [];
+  const game = document.getElementById('game');
+  const canvas = document.getElementById('lineCanvas');
+  const ctx = canvas.getContext('2d');
+  const timerDisplay = document.getElementById('timer');
+  const gameOverDisplay = document.getElementById('gameOver');
+  const restartBtn = document.getElementById('restartBtn');
+
+  let selectedTiles = [];
+  let isDragging = false;
+  let lastPointerPos = null;
+
+  let timeLeft = 60;
+  let timerInterval = null;
+  let gameRunning = true;
+
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  function createBoard() {
+    board = [];
+    game.innerHTML = '';
+    for(let y=0; y<size; y++) {
+      board[y] = [];
+      for(let x=0; x<size; x++) {
+        const colorIndex = Math.floor(Math.random()*colors.length);
+        board[y][x] = colorIndex;
+        const tile = document.createElement('div');
+        tile.className = 'tile';
+        tile.style.backgroundColor = colors[colorIndex];
+        tile.dataset.x = x;
+        tile.dataset.y = y;
+        tile.dataset.color = colorIndex;
+        game.appendChild(tile);
+      }
+    }
+  }
+
+  function getTileElement(x, y) {
+    return game.querySelector(`.tile[data-x="${x}"][data-y="${y}"]`);
+  }
+
+  function areNeighbors(a, b) {
+    return (
+      (a.x === b.x && Math.abs(a.y - b.y) === 1) ||
+      (a.y === b.y && Math.abs(a.x - b.x) === 1)
+    );
+  }
+
+  function containsTile(arr, tile) {
+    return arr.some(t => t.x === tile.x && t.y === tile.y);
+  }
+
+  function drawLines() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if(selectedTiles.length < 2) return;
+
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+
+    for(let i=0; i<selectedTiles.length; i++) {
+      const {x,y} = selectedTiles[i];
+      const el = getTileElement(x,y);
+      if(!el) continue;
+      const rect = el.getBoundingClientRect();
+      const cx = rect.left + rect.width/2;
+      const cy = rect.top + rect.height/2;
+      if(i === 0) ctx.moveTo(cx, cy);
+      else ctx.lineTo(cx, cy);
+    }
+
+    if(isDragging && lastPointerPos) {
+      ctx.lineTo(lastPointerPos.x, lastPointerPos.y);
+    }
+
+    ctx.stroke();
+  }
+
+  function getPointerPos(event) {
+    let clientX, clientY;
+    if(event.touches && event.touches.length) {
+      clientX = event.touches[0].clientX;
+      clientY = event.touches[0].clientY;
+    } else {
+      clientX = event.clientX;
+      clientY = event.clientY;
+    }
+    return {x: clientX, y: clientY};
+  }
+
+  function getTileUnderPointer(pos) {
+    for(let y=0; y<size; y++) {
+      for(let x=0; x<size; x++) {
+        const el = getTileElement(x,y);
+        if(!el) continue;
+        const rect = el.getBoundingClientRect();
+        if(pos.x >= rect.left && pos.x <= rect.right && pos.y >= rect.top && pos.y <= rect.bottom) {
+          return {x, y, color: board[y][x]};
+        }
+      }
+    }
+    return null;
+  }
+
+  function startDrag(pos) {
+    if(!gameRunning) return;
+    const tile = getTileUnderPointer(pos);
+    if(!tile) return;
+    selectedTiles = [tile];
+    isDragging = true;
+    highlightSelected();
+    lastPointerPos = pos;
+    drawLines();
+  }
+
+  function continueDrag(pos) {
+    if(!isDragging) return;
+    lastPointerPos = pos;
+    const tile = getTileUnderPointer(pos);
+    if(!tile) {
+      drawLines();
+      return;
+    }
+    const lastTile = selectedTiles[selectedTiles.length-1];
+    if(tile.color === lastTile.color
+       && areNeighbors(tile, lastTile)
+       && !containsTile(selectedTiles, tile)) {
+      selectedTiles.push(tile);
+      highlightSelected();
+    }
+    drawLines();
+  }
+
+  function endDrag() {
+    if(!isDragging) return;
+    isDragging = false;
+    lastPointerPos = null;
+    drawLines();
+    if(selectedTiles.length >= 2) {
+      removeSelectedTiles(selectedTiles.length);
+      applyGravity();
+      refillBoard();
+      updateUI();
+    }
+    clearHighlight();
+    selectedTiles = [];
+  }
+
+  function highlightSelected() {
+    clearHighlight();
+    selectedTiles.forEach(({x,y}) => {
+      const el = getTileElement(x,y);
+      if(el) el.classList.add('selected');
+    });
+  }
+
+  function clearHighlight() {
+    document.querySelectorAll('.tile.selected').forEach(el => el.classList.remove('selected'));
+  }
+
+  function removeSelectedTiles(comboLength) {
+    selectedTiles.forEach(({x,y}) => {
+      board[y][x] = null;
+      createConfettiAtTile(x,y, colors[selectedTiles[0].color]);
+    });
+    // Bonuszeit bei Combo >= 4
+    if(comboLength >= 4) {
+      addTime(5);
+    }
+  }
+
+  function addTime(seconds) {
+    if(!gameRunning) return;
+    timeLeft += seconds;
+    if(timeLeft > 99) timeLeft = 99; // max 99s
+    updateTimerDisplay();
+  }
+
+  function applyGravity() {
+    for(let x=0; x<size; x++) {
+      let emptySpots = 0;
+      for(let y=size-1; y>=0; y--) {
+        if(board[y][x] === null) emptySpots++;
+        else if(emptySpots > 0) {
+          board[y+emptySpots][x] = board[y][x];
+          board[y][x] = null;
+        }
+      }
+    }
+  }
+
+  function refillBoard() {
+    for(let y=0; y<size; y++) {
+      for(let x=0; x<size; x++) {
+        if(board[y][x] === null) board[y][x] = Math.floor(Math.random()*colors.length);
+      }
+    }
+  }
+
+  function updateUI() {
+    for(let y=0; y<size; y++) {
+      for(let x=0; x<size; x++) {
+        const el = getTileElement(x,y);
+        if(el) {
+          const colorIndex = board[y][x];
+          if(colorIndex === null) {
+            el.style.backgroundColor = 'transparent';
+            el.style.pointerEvents = 'none';
+            el.style.opacity = '0';
+          } else {
+            el.style.backgroundColor = colors[colorIndex];
+            el.style.pointerEvents = 'auto';
+            el.style.opacity = '1';
+          }
+          el.classList.remove('selected');
+        }
+      }
+    }
+  }
+
+  function createConfettiAtTile(x, y, color) {
+    const tileRect = getTileElement(x,y).getBoundingClientRect();
+
+    for(let i=0; i<15; i++) {
+      const confetti = document.createElement('div');
+      confetti.className = 'confetti';
+      confetti.style.backgroundColor = color;
+      confetti.style.left = (tileRect.left + Math.random() * tileRect.width) + 'px';
+      confetti.style.top = (tileRect.top + Math.random() * tileRect.height) + 'px';
+      confetti.style.position = 'fixed';
+      confetti.style.width = '8px';
+      confetti.style.height = '8px';
+      confetti.style.borderRadius = '2px';
+      confetti.style.pointerEvents = 'none';
+      confetti.style.zIndex = '1000';
+      document.body.appendChild(confetti);
+
+      const angle = Math.random() * 2 * Math.PI;
+      const distance = 50 + Math.random() * 50;
+      const dx = Math.cos(angle) * distance;
+      const dy = Math.sin(angle) * distance;
+
+      confetti.animate([
+        { transform: 'translate(0, 0)', opacity: 1 },
+        { transform: `translate(${dx}px, ${dy}px) rotate(${Math.random()*360}deg)`, opacity: 0 }
+      ], {
+        duration: 1000 + Math.random()*500,
+        easing: 'ease-out',
+        fill: 'forwards'
+      });
+
+      setTimeout(() => confetti.remove(), 1500);
+    }
+  }
+
+  // Timer
+  function startTimer() {
+    gameRunning = true;
+    timeLeft = 60;
+    updateTimerDisplay();
+    gameOverDisplay.style.display = 'none';
+    restartBtn.style.display = 'none';
+
+    if(timerInterval) clearInterval(timerInterval);
+    timerInterval = setInterval(() => {
+      if(timeLeft > 0) {
+        timeLeft--;
+        updateTimerDisplay();
+      } else {
+        gameOver();
+      }
+    }, 1000);
+  }
+
+  function updateTimerDisplay() {
+    timerDisplay.textContent = `Zeit: ${timeLeft}s`;
+  }
+
+  function gameOver() {
+    gameRunning = false;
+    clearInterval(timerInterval);
+    gameOverDisplay.style.display = 'block';
+    restartBtn.style.display = 'inline-block';
+  }
+
+  restartBtn.addEventListener('click', () => {
+    createBoard();
+    updateUI();
+    startTimer();
+  });
+
+  // Events für Maus & Touch
+  game.addEventListener('mousedown', e => {
+    e.preventDefault();
+    startDrag(getPointerPos(e));
+  });
+  window.addEventListener('mousemove', e => {
+    e.preventDefault();
+    continueDrag(getPointerPos(e));
+  });
+  window.addEventListener('mouseup', e => {
+    e.preventDefault();
+    endDrag();
+  });
+
+  game.addEventListener('touchstart', e => {
+    e.preventDefault();
+    startDrag(getPointerPos(e));
+  }, {passive:false});
+  window.addEventListener('touchmove', e => {
+    e.preventDefault();
+    continueDrag(getPointerPos(e));
+  }, {passive:false});
+  window.addEventListener('touchend', e => {
+    e.preventDefault();
+    endDrag();
+  });
+
+  createBoard();
+  startTimer();
+</script>
+</body>
+</html>
