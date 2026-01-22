@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Konfetti Party mit Timer und Bonus</title>
+<title>Konfetti Party mit Timer und Bonus - kleiner</title>
 <style>
   body {
     margin: 0; background: #222; display: flex; justify-content: center; align-items: center; height: 100vh; user-select: none; overflow: hidden;
@@ -15,17 +15,17 @@
   #game {
     position: relative;
     display: grid;
-    grid-template-columns: repeat(8, 50px);
-    grid-template-rows: repeat(8, 50px);
-    gap: 5px;
+    grid-template-columns: repeat(8, 35px);
+    grid-template-rows: repeat(8, 35px);
+    gap: 3px;
     z-index: 1;
   }
   .tile {
-    width: 50px; height: 50px; border-radius: 8px; box-shadow: 0 0 8px #0005 inset; cursor: pointer;
+    width: 35px; height: 35px; border-radius: 6px; box-shadow: 0 0 6px #0005 inset; cursor: pointer;
     transition: background-color 0.3s, transform 0.15s;
   }
   .tile.selected {
-    outline: 3px solid white;
+    outline: 2.5px solid white;
     transform: scale(1.1);
   }
   canvas {
@@ -33,20 +33,20 @@
   }
   #timer {
     margin-top: 15px;
-    font-size: 24px;
+    font-size: 20px;
     font-weight: bold;
     user-select: none;
   }
   #gameOver {
     margin-top: 20px;
-    font-size: 28px;
+    font-size: 24px;
     color: #f39c12;
     display: none;
   }
   #restartBtn {
     margin-top: 10px;
-    padding: 10px 20px;
-    font-size: 18px;
+    padding: 8px 16px;
+    font-size: 16px;
     border: none;
     border-radius: 6px;
     background: #3498db;
@@ -131,7 +131,7 @@
     if(selectedTiles.length < 2) return;
 
     ctx.strokeStyle = 'white';
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.beginPath();
@@ -241,7 +241,6 @@
       board[y][x] = null;
       createConfettiAtTile(x,y, colors[selectedTiles[0].color]);
     });
-    // Bonuszeit bei Combo >= 4
     if(comboLength >= 4) {
       addTime(5);
     }
@@ -250,7 +249,7 @@
   function addTime(seconds) {
     if(!gameRunning) return;
     timeLeft += seconds;
-    if(timeLeft > 99) timeLeft = 99; // max 99s
+    if(timeLeft > 99) timeLeft = 99;
     updateTimerDisplay();
   }
 
