@@ -1,4 +1,4 @@
-<! DOCTYPE html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
@@ -14,9 +14,9 @@
 html, body {
   margin: 0;
   padding: 0;
-  overflow: hidden; /* Kein Scrollen möglich */
-  touch-action: none; /* Verhindert Swipe, Scroll und Zoom */
-  -webkit-user-select: none; /* Kein Text markieren auf iOS */
+  overflow: hidden;
+  touch-action: none;
+  -webkit-user-select: none;
   -ms-user-select: none;
   user-select: none;
 }
@@ -34,8 +34,23 @@ body {
 
 #hud {
   display: flex;
-  gap: 20px;
+  gap: 30px;
   margin: 10px;
+  font-size: 1.1rem;
+  align-items: center;
+}
+
+#hud div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#hud svg {
+  width: 20px;
+  height: 20px;
+  fill: #fff;
+  flex-shrink: 0;
 }
 
 #wrapper {
@@ -53,8 +68,11 @@ body {
   width: var(--tile);
   height: var(--tile);
   border-radius: 10px;
-  transition: transform 0.2s ease, opacity 0.2s ease;
-  touch-action: none; /* Kein Scroll auf Tiles */
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  touch-action: none;
+  will-change: transform, opacity;
+  /* Für smooth pop scale animation */
+  transform-origin: center center;
 }
 
 .tile.selected {
@@ -62,8 +80,8 @@ body {
 }
 
 .tile.pop {
-  transform: scale(0.2);
   opacity: 0;
+  pointer-events: none;
 }
 
 canvas {
@@ -103,14 +121,27 @@ canvas {
 <body>
 
 <div id="hud">
-  <div>Zeit: <span id="time">60</span>s</div>
-  <div>Score: <span id="score">0</span></div>
-  <div>Highscore: <span id="high">0</span></div>
+  <div>
+    <!-- Uhr Icon -->
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1a11 11 0 1 0 11 11A11.013 11.013 0 0 0 12 1zm0 20a9 9 0 1 1 9-9 9.01 9.01 0 0 1-9 9zm.5-14h-1v6l5.25 3.15.5-.86-4.75-2.79z"/></svg>
+    Zeit: <span id="time">60</span>s
+  </div>
+  <div>
+    <!-- Stern Icon für Score -->
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+    Score: <span id="score">0</span>
+  </div>
+  <div>
+    <!-- Pokal Icon für Highscore -->
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 21h10v-2H7zm3-18v3h4V3h-4zm5 3h3v4h-3zm-10 0H2v4h3zM6 8v5a6 6 0 0 0 12 0V8H6z"/></svg>
+    Highscore: <span id="high">0</span>
+  </div>
 </div>
 
 <div id="wrapper">
   <canvas id="line"></canvas>
   <div id="board"></div>
+  <canvas id="confettiCanvas"></canvas>
   <div id="gameOverOverlay">
     Game Over 🎮<br />
     <button id="restartBtn">Neu starten</button>
@@ -120,8 +151,10 @@ canvas {
 <script>
 const colors = ["#3fa9f5","#7ac943","#fcee21","#9b59b6","#e74c3c"];
 const board = document.getElementById("board");
-const canvas = document.getElementById("line");
-const ctx = canvas.getContext("2d");
+const lineCanvas = document.getElementById("line");
+const ctx = lineCanvas.getContext("2d");
+const confettiCanvas = document.getElementById("confettiCanvas");
+const confettiCtx = confettiCanvas.getContext("2d");
 
 let tiles = [];
 let selected = [];
@@ -136,8 +169,10 @@ document.getElementById("high").textContent =
   localStorage.getItem("highscore") || 0;
 
 function resizeCanvas() {
-  canvas.width = board.offsetWidth;
-  canvas.height = board.offsetHeight;
+  lineCanvas.width = board.offsetWidth;
+  lineCanvas.height = board.offsetHeight;
+  confettiCanvas.width = board.offsetWidth;
+  confettiCanvas.height = board.offsetHeight;
 }
 window.addEventListener("resize", resizeCanvas);
 
@@ -179,7 +214,7 @@ function center(tile) {
 }
 
 function drawLine() {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.clearRect(0,0,lineCanvas.width,lineCanvas.height);
   if (selected.length < 2) return;
   ctx.strokeStyle = "#fff";
   ctx.lineWidth = 6;
@@ -193,13 +228,110 @@ function drawLine() {
   ctx.stroke();
 }
 
-function clearSelection(pop=false) {
-  selected.forEach(t=>{
-    t.classList.remove("selected");
-    if(pop) t.classList.add("pop");
+// Konfetti Partikel Klasse
+class ConfettiParticle {
+  constructor(x, y, color) {
+    this.x = x;
+    this.y = y;
+    this.color = color;
+    this.size = Math.random() * 5 + 3;
+    this.speedX = (Math.random() - 0.5) * 4;
+    this.speedY = Math.random() * -5 - 3;
+    this.gravity = 0.15;
+    this.rotation = Math.random() * 360;
+    this.rotationSpeed = (Math.random() - 0.5) * 10;
+    this.opacity = 1;
+    this.life = 60;
+  }
+  update() {
+    this.speedY += this.gravity;
+    this.x += this.speedX;
+    this.y += this.speedY;
+    this.rotation += this.rotationSpeed;
+    this.life--;
+    this.opacity = this.life / 60;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation * Math.PI / 180);
+    ctx.fillStyle = this.color;
+    ctx.globalAlpha = this.opacity;
+    ctx.fillRect(-this.size/2, -this.size/2, this.size, this.size);
+    ctx.restore();
+  }
+}
+
+let confettiParticles = [];
+let confettiAnimating = false;
+
+function emitConfetti(points) {
+  if (confettiAnimating) return; // Nicht mehrfach starten
+  confettiAnimating = true;
+  confettiParticles = [];
+  points.forEach(p => {
+    const count = 10; // Pro Stein 10 Partikel
+    for(let i=0; i<count; i++) {
+      confettiParticles.push(new ConfettiParticle(p.x, p.y, colors[Math.floor(Math.random()*colors.length)]));
+    }
   });
-  selected=[];
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+  animateConfetti();
+}
+
+function animateConfetti() {
+  confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+  confettiParticles.forEach((p, i) => {
+    p.update();
+    p.draw(confettiCtx);
+    if (p.life <= 0) confettiParticles.splice(i, 1);
+  });
+
+  if(confettiParticles.length > 0) {
+    requestAnimationFrame(animateConfetti);
+  } else {
+    confettiAnimating = false;
+  }
+}
+
+function clearSelection(pop=false) {
+  if(pop && selected.length > 0) {
+    // Erstelle Positionspunkte für Konfetti
+    const points = selected.map(t => {
+      const c = center(t);
+      return { x: c.x, y: c.y };
+    });
+
+    // Pop Animation: Skalieren mit Bounce, danach ausblenden
+    selected.forEach((t, i) => {
+      t.style.transition = 'transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease';
+      // Knackiger Pop mit Overshoot und zurück
+      t.style.transform = 'scale(1.4)';
+      setTimeout(() => {
+        t.style.transform = 'scale(0.2)';
+        t.style.opacity = '0';
+      }, 250);
+    });
+
+    // Konfetti starten
+    emitConfetti(points);
+
+    // Nach Animation Steine entfernen & Board neu machen
+    setTimeout(() => {
+      selected.forEach(t => {
+        if(t.parentNode) t.parentNode.removeChild(t);
+      });
+      createBoard();
+    }, 650);
+  } else {
+    selected.forEach(t=>{
+      t.classList.remove("selected");
+      t.style.transition = '';
+      t.style.transform = '';
+      t.style.opacity = '';
+    });
+  }
+  selected = [];
+  ctx.clearRect(0,0,lineCanvas.width,lineCanvas.height);
 }
 
 board.addEventListener("pointerdown", e=>{
@@ -223,12 +355,11 @@ board.addEventListener("pointermove", e=>{
 });
 
 board.addEventListener("pointerup", ()=>{
-  if(selected.length>=4){
-    score += selected.length*10;
+  if(selected.length >= 4){
+    score += selected.length * 10;
     time += 5;
-    document.getElementById("score").textContent=score;
+    document.getElementById("score").textContent = score;
     clearSelection(true);
-    setTimeout(createBoard,200);
   } else {
     clearSelection(false);
   }
