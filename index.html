@@ -1,8 +1,8 @@
-<!DOCTYPE html>
+<! DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
 <title>Tile Connect</title>
 
 <style>
@@ -11,14 +11,25 @@
   --gap: 6px;
 }
 
-body {
+html, body {
   margin: 0;
+  padding: 0;
+  overflow: hidden; /* Kein Scrollen möglich */
+  touch-action: none; /* Verhindert Swipe, Scroll und Zoom */
+  -webkit-user-select: none; /* Kein Text markieren auf iOS */
+  -ms-user-select: none;
+  user-select: none;
+}
+
+body {
   background: #121212;
   color: #fff;
   font-family: system-ui, sans-serif;
   display: flex;
   flex-direction: column;
   align-items: center;
+  height: 100vh;
+  box-sizing: border-box;
 }
 
 #hud {
@@ -29,6 +40,7 @@ body {
 
 #wrapper {
   position: relative;
+  flex-shrink: 0;
 }
 
 #board {
@@ -42,6 +54,7 @@ body {
   height: var(--tile);
   border-radius: 10px;
   transition: transform 0.2s ease, opacity 0.2s ease;
+  touch-action: none; /* Kein Scroll auf Tiles */
 }
 
 .tile.selected {
@@ -58,6 +71,32 @@ canvas {
   inset: 0;
   pointer-events: none;
 }
+
+#gameOverOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(18,18,18,0.9);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #fff;
+  font-size: 2rem;
+  font-weight: bold;
+  user-select: none;
+  visibility: hidden;
+  z-index: 10;
+  flex-direction: column;
+  gap: 1rem;
+}
+#gameOverOverlay button {
+  background: #3fa9f5;
+  border: none;
+  padding: 0.5em 1.2em;
+  font-size: 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  color: white;
+}
 </style>
 </head>
 
@@ -72,6 +111,10 @@ canvas {
 <div id="wrapper">
   <canvas id="line"></canvas>
   <div id="board"></div>
+  <div id="gameOverOverlay">
+    Game Over 🎮<br />
+    <button id="restartBtn">Neu starten</button>
+  </div>
 </div>
 
 <script>
@@ -84,6 +127,10 @@ let tiles = [];
 let selected = [];
 let score = 0;
 let time = 60;
+let timerInterval = null;
+
+const gameOverOverlay = document.getElementById("gameOverOverlay");
+const restartBtn = document.getElementById("restartBtn");
 
 document.getElementById("high").textContent =
   localStorage.getItem("highscore") || 0;
@@ -187,18 +234,36 @@ board.addEventListener("pointerup", ()=>{
   }
 });
 
-setInterval(()=>{
-  time--;
-  document.getElementById("time").textContent=time;
-  if(time<=0){
-    const high = localStorage.getItem("highscore")||0;
-    if(score>high) localStorage.setItem("highscore",score);
-    alert("Game Over 🎮");
-    location.reload();
-  }
-},1000);
+function startTimer() {
+  if(timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    time--;
+    document.getElementById("time").textContent = time;
+    if(time <= 0) {
+      clearInterval(timerInterval);
+      const high = localStorage.getItem("highscore")||0;
+      if(score > high) localStorage.setItem("highscore", score);
+      showGameOver();
+    }
+  }, 1000);
+}
+
+function showGameOver() {
+  gameOverOverlay.style.visibility = "visible";
+}
+
+restartBtn.addEventListener("click", () => {
+  score = 0;
+  time = 60;
+  document.getElementById("score").textContent = score;
+  document.getElementById("time").textContent = time;
+  gameOverOverlay.style.visibility = "hidden";
+  createBoard();
+  startTimer();
+});
 
 createBoard();
+startTimer();
 </script>
 
 </body>
