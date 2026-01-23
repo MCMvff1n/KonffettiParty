@@ -1,330 +1,9 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>Tile Connect</title>
-
-<style>
-:root {
-  --tile: 42px;
-  --gap: 6px;
-}
-
-html, body {
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  touch-action: none;
-  -webkit-user-select: none;
-  -ms-user-select: none;
-  user-select: none;
-}
-
-body {
-  background: #121212;
-  color: #fff;
-  font-family: system-ui, sans-serif;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  height: 100vh;
-  box-sizing: border-box;
-}
-
-#hud {
-  display: flex;
-  gap: 30px;
-  margin: 10px;
-  font-size: 1.1rem;
-  align-items: center;
-}
-
-/* Texte „Zeit:“, „Score:“, „Highscore:“ ausblenden */
-#hud div {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  user-select: none;
-  pointer-events: none;
-  position: relative;
-}
-
-#hud div svg {
-  width: 20px;
-  height: 20px;
-  fill: #fff;
-  flex-shrink: 0;
-  pointer-events: auto;
-  position: relative;
-}
-
-/* Nur die Zahlen sichtbar, keine Texte mehr */
-#hud div span {
-  color: white;
-  pointer-events: none;
-  font-weight: bold;
-  min-width: 24px;
-  text-align: left;
-  display: inline-block;
-}
-
-/* Abstand vor Zahlen, damit Icons nicht kleben */
-#hud div svg {
-  margin-right: 4px;
-}
-
-#wrapper {
-  position: relative;
-  flex-shrink: 0;
-}
-
-#board {
-  display: grid;
-  grid-template-columns: repeat(8, var(--tile));
-  gap: var(--gap);
-}
-
-.tile {
-  width: var(--tile);
-  height: var(--tile);
-  border-radius: 10px;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  touch-action: none;
-  will-change: transform, opacity;
-  transform-origin: center center;
-}
-
-.tile.selected {
-  outline: 3px solid #fff;
-}
-
-.tile.pop {
-  opacity: 0;
-  pointer-events: none;
-}
-
-canvas {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 5;
-}
-
-#confettiCanvas {
-  z-index: 6;
-}
-
-#gameOverOverlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(18,18,18,0.9);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  color: #fff;
-  font-size: 2rem;
-  font-weight: bold;
-  user-select: none;
-  visibility: hidden;
-  z-index: 10;
-  flex-direction: column;
-  gap: 1rem;
-}
-#gameOverOverlay button {
-  background: #3fa9f5;
-  border: none;
-  padding: 0.5em 1.2em;
-  font-size: 1rem;
-  border-radius: 6px;
-  cursor: pointer;
-  color: white;
-}
-</style>
-</head>
-
-<body>
-
-<div id="hud">
-  <div>
-    <!-- Uhr Icon -->
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1a11 11 0 1 0 11 11A11.013 11.013 0 0 0 12 1zm0 20a9 9 0 1 1 9-9 9.01 9.01 0 0 1-9 9zm.5-14h-1v6l5.25 3.15.5-.86-4.75-2.79z"/></svg>
-    <span id="time">60</span>
-  </div>
-  <div>
-    <!-- Stern Icon für Score -->
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
-    <span id="score">0</span>
-  </div>
-  <div>
-    <!-- Pokal Icon für Highscore -->
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 21h10v-2H7zm3-18v3h4V3h-4zm5 3h3v4h-3zm-10 0H2v4h3zM6 8v5a6 6 0 0 0 12 0V8H6z"/></svg>
-    <span id="high">0</span>
-  </div>
-</div>
-
-<div id="wrapper">
-  <canvas id="line"></canvas>
-  <div id="board"></div>
-  <canvas id="confettiCanvas"></canvas>
-  <div id="gameOverOverlay">
-    Game Over 🎮<br />
-    <button id="restartBtn">Neu starten</button>
-  </div>
-</div>
-
-<script>
-const colors = ["#3fa9f5","#7ac943","#fcee21","#9b59b6","#e74c3c"];
-const board = document.getElementById("board");
-const lineCanvas = document.getElementById("line");
-const ctx = lineCanvas.getContext("2d");
-const confettiCanvas = document.getElementById("confettiCanvas");
-const confettiCtx = confettiCanvas.getContext("2d");
-
-let tiles = [];
-let selected = [];
-let score = 0;
-let time = 60;
-let timerInterval = null;
-
-const gameOverOverlay = document.getElementById("gameOverOverlay");
-const restartBtn = document.getElementById("restartBtn");
-
-document.getElementById("high").textContent =
-  localStorage.getItem("highscore") || 0;
-
-function resizeCanvas() {
-  lineCanvas.width = board.offsetWidth;
-  lineCanvas.height = board.offsetHeight;
-  confettiCanvas.width = board.offsetWidth;
-  confettiCanvas.height = board.offsetHeight;
-}
-window.addEventListener("resize", resizeCanvas);
-
-function createBoard() {
-  board.innerHTML = "";
-  tiles = [];
-  for (let i = 0; i < 64; i++) {
-    const t = document.createElement("div");
-    t.className = "tile";
-    const c = colors[Math.floor(Math.random()*colors.length)];
-    t.style.background = c;
-    t.dataset.color = c;
-    t.dataset.i = i;
-    board.appendChild(t);
-    tiles.push(t);
-  }
-  resizeCanvas();
-}
-
-function pos(i) {
-  return {
-    x: i % 8,
-    y: Math.floor(i / 8)
-  };
-}
-
-function neighbor(a, b) {
-  const A = pos(a), B = pos(b);
-  return Math.abs(A.x - B.x) <= 1 && Math.abs(A.y - B.y) <= 1;
-}
-
-function center(tile) {
-  const r = tile.getBoundingClientRect();
-  const b = board.getBoundingClientRect();
-  return {
-    x: r.left - b.left + r.width/2,
-    y: r.top - b.top + r.height/2
-  };
-}
-
-function drawLine() {
-  ctx.clearRect(0,0,lineCanvas.width,lineCanvas.height);
-  if (selected.length < 2) return;
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 6;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  selected.forEach((t,i)=>{
-    const p = center(t);
-    if(i===0) ctx.moveTo(p.x,p.y);
-    else ctx.lineTo(p.x,p.y);
-  });
-  ctx.stroke();
-}
-
-// Konfetti Partikel Klasse
-class ConfettiParticle {
-  constructor(x, y, color) {
-    this.x = x;
-    this.y = y;
-    this.color = color;
-    this.size = Math.random() * 5 + 3;
-    this.speedX = (Math.random() - 0.5) * 4;
-    this.speedY = Math.random() * -5 - 3;
-    this.gravity = 0.15;
-    this.rotation = Math.random() * 360;
-    this.rotationSpeed = (Math.random() - 0.5) * 10;
-    this.opacity = 1;
-    this.life = 60;
-  }
-  update() {
-    this.speedY += this.gravity;
-    this.x += this.speedX;
-    this.y += this.speedY;
-    this.rotation += this.rotationSpeed;
-    this.life--;
-    this.opacity = this.life / 60;
-  }
-  draw(ctx) {
-    ctx.save();
-    ctx.translate(this.x, this.y);
-    ctx.rotate(this.rotation * Math.PI / 180);
-    ctx.fillStyle = this.color;
-    ctx.globalAlpha = this.opacity;
-    ctx.fillRect(-this.size/2, -this.size/2, this.size, this.size);
-    ctx.restore();
-  }
-}
-
-let confettiParticles = [];
-let confettiAnimating = false;
-
-function emitConfetti(points) {
-  if (confettiAnimating) return;
-  confettiAnimating = true;
-  confettiParticles = [];
-  points.forEach(p => {
-    const count = 10;
-    for(let i=0; i<count; i++) {
-      confettiParticles.push(new ConfettiParticle(p.x, p.y, colors[Math.floor(Math.random()*colors.length)]));
-    }
-  });
-  animateConfetti();
-}
-
-function animateConfetti() {
-  confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
-  confettiParticles.forEach((p, i) => {
-    p.update();
-    p.draw(confettiCtx);
-    if (p.life <= 0) confettiParticles.splice(i, 1);
-  });
-
-  if(confettiParticles.length > 0) {
-    requestAnimationFrame(animateConfetti);
-  } else {
-    confettiAnimating = false;
-  }
-}
-
 function clearSelection(pop=false) {
   if(pop && selected.length > 0) {
-    const points = selected.map(t => {
-      const c = center(t);
-      return { x: c.x, y: c.y };
-    });
+    // Speichere Indizes der entfernten Kacheln
+    const removedIndices = selected.map(t => +t.dataset.i);
 
+    // Animationsstart für pop
     selected.forEach((t, i) => {
       t.style.transition = 'transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease';
       t.style.transform = 'scale(1.4)';
@@ -334,96 +13,138 @@ function clearSelection(pop=false) {
       }, 250);
     });
 
+    // Konfetti von entfernten Kacheln
+    const points = selected.map(t => {
+      const c = center(t);
+      return { x: c.x, y: c.y };
+    });
     emitConfetti(points);
 
     setTimeout(() => {
-      selected.forEach(t => {
-        if(t.parentNode) t.parentNode.removeChild(t);
+      // Entferne die Kacheln aus DOM + tiles Array
+      removedIndices.sort((a,b) => b - a).forEach(idx => {
+        const tile = tiles[idx];
+        if(tile && tile.parentNode) tile.parentNode.removeChild(tile);
+        tiles.splice(idx, 1);
       });
-      createBoard();
+
+      // Jetzt nachrutschen & auffüllen
+      collapseColumns(removedIndices);
+
+      selected = [];
+      ctx.clearRect(0,0,lineCanvas.width,lineCanvas.height);
     }, 650);
   } else {
+    // Keine pop Animation, nur Auswahl zurücksetzen
     selected.forEach(t=>{
       t.classList.remove("selected");
       t.style.transition = '';
       t.style.transform = '';
       t.style.opacity = '';
     });
+    selected = [];
+    ctx.clearRect(0,0,lineCanvas.width,lineCanvas.height);
   }
-  selected = [];
-  ctx.clearRect(0,0,lineCanvas.width,lineCanvas.height);
 }
 
-board.addEventListener("pointerdown", e=>{
-  if(!e.target.classList.contains("tile")) return;
-  selected=[e.target];
-  e.target.classList.add("selected");
-});
+/**
+ * Lässt die Tiles in den betroffenen Spalten nachrutschen und füllt oben neu auf
+ */
+function collapseColumns(removedIndices) {
+  // Ermittle betroffene Spalten
+  const cols = new Set(removedIndices.map(i => i % 8));
 
-board.addEventListener("pointermove", e=>{
-  const el = document.elementFromPoint(e.clientX,e.clientY);
-  if(!el || !el.classList.contains("tile")) return;
-  if(selected.includes(el)) return;
-
-  const last = selected[selected.length-1];
-  if(el.dataset.color===last.dataset.color &&
-     neighbor(+el.dataset.i,+last.dataset.i)) {
-    selected.push(el);
-    el.classList.add("selected");
-    drawLine();
-  }
-});
-
-board.addEventListener("pointerup", ()=>{
-  if(selected.length >= 2){
-    // Punkte = Anzahl der verbundenen Kacheln (mindestens 2)
-    score += selected.length;
-
-    // Ab 4 Kacheln +5 Sekunden Bonuszeit
-    if(selected.length >= 4){
-      time += 5;
+  cols.forEach(col => {
+    // Für jede Spalte: erstelle Array mit Tiles in dieser Spalte sortiert von unten nach oben (y 7 bis 0)
+    let colTiles = [];
+    for(let row = 7; row >= 0; row--) {
+      let idx = row * 8 + col;
+      if(tiles[idx]) colTiles.push(tiles[idx]);
+      else colTiles.push(null);
     }
-    
-    document.getElementById("score").textContent = score;
-    document.getElementById("time").textContent = time;
-    clearSelection(selected.length >= 2); // Alle ab 2 verschwinden
 
-  } else {
-    clearSelection(false);
-  }
-});
+    // Wie viele Tiles wurden entfernt in dieser Spalte?
+    const removedInCol = removedIndices.filter(i => i % 8 === col);
 
-function startTimer() {
-  if(timerInterval) clearInterval(timerInterval);
-  timerInterval = setInterval(() => {
-    time--;
-    document.getElementById("time").textContent = time;
-    if(time <= 0) {
-      clearInterval(timerInterval);
-      const high = localStorage.getItem("highscore")||0;
-      if(score > high) localStorage.setItem("highscore", score);
-      showGameOver();
+    // Entferne alle nulls und sortiere spalte nach existierenden Tiles (unten beginnend)
+    colTiles = colTiles.filter(t => t !== null);
+
+    // Anzahl der neuen Tiles, die wir oben auffüllen müssen
+    const fillCount = 8 - colTiles.length;
+
+    // Neue Tiles oben erzeugen
+    let newTiles = [];
+    for(let i = 0; i < fillCount; i++) {
+      const t = document.createElement("div");
+      t.className = "tile";
+      const c = colors[Math.floor(Math.random()*colors.length)];
+      t.style.background = c;
+      t.dataset.color = c;
+      board.appendChild(t);
+      newTiles.push(t);
     }
-  }, 1000);
+
+    // Erneuere tiles array für die Spalte
+    // Rebuild colTiles: zuerst newTiles oben, dann bestehende unten
+    const newColTiles = [...newTiles, ...colTiles];
+
+    // Update tiles array: newColTiles von oben (row 0) bis unten (row 7)
+    for(let row = 0; row < 8; row++) {
+      let newIndex = row * 8 + col;
+      let tile = newColTiles[7 - row]; // weil colTiles war von unten nach oben
+      if(tile) {
+        tiles[newIndex] = tile;
+        tile.dataset.i = newIndex;
+        tile.classList.remove("selected","pop");
+        tile.style.transition = '';
+        tile.style.transform = '';
+        tile.style.opacity = '';
+        tile.style.background = tile.dataset.color; // sicherheitshalber
+      }
+    }
+  });
+
+  // Animation für das Nachrutschen:
+  animateCollapse(cols);
 }
 
-function showGameOver() {
-  gameOverOverlay.style.visibility = "visible";
+/**
+ * Animation: Die Tiles rutschen optisch runter
+ */
+function animateCollapse(cols) {
+  // Für jede Spalte: finde Tiles, die "fallen" müssen
+  cols.forEach(col => {
+    // Array der Y Positionen die fehlen (also Löcher)
+    let holes = [];
+    for(let row = 7; row >= 0; row--) {
+      let idx = row * 8 + col;
+      if(!tiles[idx]) holes.push(row);
+    }
+
+    if(holes.length === 0) return;
+
+    // Für jedes Loch: alle Tiles über dem Loch um 1 nach unten animieren
+    holes.forEach(holeRow => {
+      for(let r = holeRow - 1; r >= 0; r--) {
+        let idx = r * 8 + col;
+        let tile = tiles[idx];
+        if(tile) {
+          // Animieren: verschieben um (holeRow - r) * tileHeight runter
+          tile.style.transition = 'transform 0.3s ease';
+          tile.style.transform = `translateY(${(holeRow - r) * (parseInt(getComputedStyle(tile).width))}px)`;
+        }
+      }
+    });
+  });
+
+  // Nach Animation alle Transform zurücksetzen, damit Position wieder stimmt
+  setTimeout(() => {
+    for(let i=0; i < tiles.length; i++) {
+      let t = tiles[i];
+      if(t) {
+        t.style.transition = '';
+        t.style.transform = '';
+      }
+    }
+  }, 350);
 }
-
-restartBtn.addEventListener("click", () => {
-  score = 0;
-  time = 60;
-  document.getElementById("score").textContent = score;
-  document.getElementById("time").textContent = time;
-  gameOverOverlay.style.visibility = "hidden";
-  createBoard();
-  startTimer();
-});
-
-createBoard();
-startTimer();
-</script>
-
-</body>
-</html>
