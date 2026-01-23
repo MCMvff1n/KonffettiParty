@@ -50,17 +50,6 @@ body {
   position: relative;
 }
 
-#hud div::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 0;
-  height: 0;
-  pointer-events: none;
-}
-
 #hud div svg {
   width: 20px;
   height: 20px;
@@ -387,13 +376,18 @@ board.addEventListener("pointermove", e=>{
 
 board.addEventListener("pointerup", ()=>{
   if(selected.length >= 2){
+    // Punkte = Anzahl der verbundenen Kacheln (mindestens 2)
+    score += selected.length;
+
+    // Ab 4 Kacheln +5 Sekunden Bonuszeit
     if(selected.length >= 4){
-      score += selected.length * 10;
       time += 5;
     }
+    
     document.getElementById("score").textContent = score;
     document.getElementById("time").textContent = time;
-    clearSelection(selected.length >= 4);
+    clearSelection(selected.length >= 2); // Alle ab 2 verschwinden
+
   } else {
     clearSelection(false);
   }
