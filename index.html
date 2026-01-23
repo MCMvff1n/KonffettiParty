@@ -40,6 +40,7 @@ body {
   align-items: center;
 }
 
+/* Texte „Zeit:“, „Score:“, „Highscore:“ ausblenden */
 #hud div {
   display: flex;
   align-items: center;
@@ -58,6 +59,7 @@ body {
   position: relative;
 }
 
+/* Nur die Zahlen sichtbar, keine Texte mehr */
 #hud div span {
   color: white;
   pointer-events: none;
@@ -67,6 +69,7 @@ body {
   display: inline-block;
 }
 
+/* Abstand vor Zahlen, damit Icons nicht kleben */
 #hud div svg {
   margin-right: 4px;
 }
@@ -90,7 +93,6 @@ body {
   touch-action: none;
   will-change: transform, opacity;
   transform-origin: center center;
-  user-select: none;
 }
 
 .tile.selected {
@@ -318,7 +320,10 @@ function animateConfetti() {
 
 function clearSelection(pop=false) {
   if(pop && selected.length > 0) {
-    const removedIndices = selected.map(t => +t.dataset.i);
+    const points = selected.map(t => {
+      const c = center(t);
+      return { x: c.x, y: c.y };
+    });
 
     selected.forEach((t, i) => {
       t.style.transition = 'transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease';
@@ -329,24 +334,13 @@ function clearSelection(pop=false) {
       }, 250);
     });
 
-    const points = selected.map(t => {
-      const c = center(t);
-      return { x: c.x, y: c.y };
-    });
     emitConfetti(points);
 
     setTimeout(() => {
-      // Entferne Kacheln aus DOM und aus tiles Array (von hinten nach vorne, damit Index korrekt bleibt)
-      removedIndices.sort((a,b) => b - a).forEach(idx => {
-        const tile = tiles[idx];
-        if(tile && tile.parentNode) tile.parentNode.removeChild(tile);
-        tiles.splice(idx, 1);
+      selected.forEach(t => {
+        if(t.parentNode) t.parentNode.removeChild(t);
       });
-
-      collapseColumns(removedIndices);
-
-      selected = [];
-      ctx.clearRect(0,0,lineCanvas.width,lineCanvas.height);
+      createBoard();
     }, 650);
   } else {
     selected.forEach(t=>{
@@ -355,110 +349,9 @@ function clearSelection(pop=false) {
       t.style.transform = '';
       t.style.opacity = '';
     });
-    selected = [];
-    ctx.clearRect(0,0,lineCanvas.width,lineCanvas.height);
   }
-}
-
-function collapseColumns(removedIndices) {
-  const cols = new Set(removedIndices.map(i => i % 8));
-
-  cols.forEach(col => {
-    // Alle Tiles in dieser Spalte (von unten nach oben)
-    let colTiles = [];
-    for(let row = 7; row >= 0; row--) {
-      let idx = row * 8 + col;
-      if(tiles[idx]) colTiles.push(tiles[idx]);
-      else colTiles.push(null);
-    }
-
-    // Filter existierende raus
-    colTiles = colTiles.filter(t => t !== null);
-
-    const fillCount = 8 - colTiles.length;
-
-    // Neue Tiles erzeugen
-    let newTiles = [];
-    for(let i = 0; i < fillCount; i++) {
-      const t = document.createElement("div");
-      t.className = "tile";
-      const c = colors[Math.floor(Math.random()*colors.length)];
-      t.style.background = c;
-      t.dataset.color = c;
-
-      // Neue Kacheln vor der ersten Kachel der Spalte einfügen (damit Reihenfolge stimmt)
-      let inserted = false;
-      for(let child of board.children) {
-        if(child.dataset && child.dataset.i) {
-          const childI = +child.dataset.i;
-          if(childI % 8 === col) {
-            board.insertBefore(t, child);
-            inserted = true;
-            break;
-          }
-        }
-      }
-      if(!inserted) {
-        board.appendChild(t);
-      }
-
-      newTiles.push(t);
-    }
-
-    // Neu zusammensetzen: zuerst neue Tiles oben, dann bestehende unten
-    const newColTiles = [...newTiles, ...colTiles];
-
-    // Update tiles Array und data-i Werte von oben nach unten
-    for(let row = 0; row < 8; row++) {
-      let newIndex = row * 8 + col;
-      let tile = newColTiles[7 - row]; // da von unten nach oben gespeichert
-      if(tile) {
-        tiles[newIndex] = tile;
-        tile.dataset.i = newIndex;
-        tile.classList.remove("selected", "pop");
-        tile.style.transition = '';
-        tile.style.transform = '';
-        tile.style.opacity = '';
-        tile.style.background = tile.dataset.color;
-      }
-    }
-  });
-
-  animateCollapse(cols);
-}
-
-function animateCollapse(cols) {
-  cols.forEach(col => {
-    // Löcher in Spalte finden (theoretisch, für Animation)
-    let holeRows = [];
-
-    for(let row = 7; row >= 0; row--) {
-      let idx = row * 8 + col;
-      if(!tiles[idx]) holeRows.push(row);
-    }
-
-    // Für jede Lücke die Tiles darüber runter animieren
-    holeRows.forEach(holeRow => {
-      for(let r = holeRow - 1; r >= 0; r--) {
-        let idx = r * 8 + col;
-        let tile = tiles[idx];
-        if(tile) {
-          tile.style.transition = 'transform 0.3s ease';
-          tile.style.transform = `translateY(${(holeRow - r) * (parseInt(getComputedStyle(tile).width))}px)`;
-        }
-      }
-    });
-  });
-
-  setTimeout(() => {
-    for(let i=0; i < tiles.length; i++) {
-      let t = tiles[i];
-      if(t) {
-        t.style.transition = '';
-        t.style.transform = '';
-      }
-    }
-  }, 350);
+  selected = [];
+  ctx.clearRect(0,0,lineCanvas.width,lineCanvas.height);
 }
 
 board.addEventListener("pointerdown", e=>{
@@ -483,14 +376,17 @@ board.addEventListener("pointermove", e=>{
 
 board.addEventListener("pointerup", ()=>{
   if(selected.length >= 2){
+    // Punkte = Anzahl der verbundenen Kacheln (mindestens 2)
     score += selected.length;
+
+    // Ab 4 Kacheln +5 Sekunden Bonuszeit
     if(selected.length >= 4){
       time += 5;
     }
     
     document.getElementById("score").textContent = score;
     document.getElementById("time").textContent = time;
-    clearSelection(selected.length >= 2);
+    clearSelection(selected.length >= 2); // Alle ab 2 verschwinden
 
   } else {
     clearSelection(false);
