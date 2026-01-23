@@ -90,6 +90,7 @@ body {
   touch-action: none;
   will-change: transform, opacity;
   transform-origin: center center;
+  user-select: none;
 }
 
 .tile.selected {
@@ -359,14 +360,11 @@ function clearSelection(pop=false) {
   }
 }
 
-/**
- * Lässt die Tiles in den betroffenen Spalten nachrutschen und füllt oben neu auf
- */
 function collapseColumns(removedIndices) {
   const cols = new Set(removedIndices.map(i => i % 8));
 
   cols.forEach(col => {
-    // Array von Tiles in der Spalte, von unten nach oben
+    // Alle Tiles in dieser Spalte (von unten nach oben)
     let colTiles = [];
     for(let row = 7; row >= 0; row--) {
       let idx = row * 8 + col;
@@ -374,13 +372,12 @@ function collapseColumns(removedIndices) {
       else colTiles.push(null);
     }
 
-    // Filtere existierende Tiles raus
+    // Filter existierende raus
     colTiles = colTiles.filter(t => t !== null);
 
-    // Wie viele neue Tiles müssen oben rein?
     const fillCount = 8 - colTiles.length;
 
-    // Neue Tiles oben erzeugen
+    // Neue Tiles erzeugen
     let newTiles = [];
     for(let i = 0; i < fillCount; i++) {
       const t = document.createElement("div");
@@ -388,21 +385,37 @@ function collapseColumns(removedIndices) {
       const c = colors[Math.floor(Math.random()*colors.length)];
       t.style.background = c;
       t.dataset.color = c;
-      board.appendChild(t);
+
+      // Neue Kacheln vor der ersten Kachel der Spalte einfügen (damit Reihenfolge stimmt)
+      let inserted = false;
+      for(let child of board.children) {
+        if(child.dataset && child.dataset.i) {
+          const childI = +child.dataset.i;
+          if(childI % 8 === col) {
+            board.insertBefore(t, child);
+            inserted = true;
+            break;
+          }
+        }
+      }
+      if(!inserted) {
+        board.appendChild(t);
+      }
+
       newTiles.push(t);
     }
 
     // Neu zusammensetzen: zuerst neue Tiles oben, dann bestehende unten
     const newColTiles = [...newTiles, ...colTiles];
 
-    // Aktualisiere tiles Array, newColTiles von oben (row 0) bis unten (row 7)
+    // Update tiles Array und data-i Werte von oben nach unten
     for(let row = 0; row < 8; row++) {
       let newIndex = row * 8 + col;
-      let tile = newColTiles[7 - row]; // da colTiles von unten nach oben war
+      let tile = newColTiles[7 - row]; // da von unten nach oben gespeichert
       if(tile) {
         tiles[newIndex] = tile;
         tile.dataset.i = newIndex;
-        tile.classList.remove("selected","pop");
+        tile.classList.remove("selected", "pop");
         tile.style.transition = '';
         tile.style.transform = '';
         tile.style.opacity = '';
@@ -414,12 +427,9 @@ function collapseColumns(removedIndices) {
   animateCollapse(cols);
 }
 
-/**
- * Animiert das Nachrutschen der Kacheln
- */
 function animateCollapse(cols) {
   cols.forEach(col => {
-    // Löcher in Spalte finden (reine theoretische Löcher, eigentlich schon beseitigt, hier nur Animation)
+    // Löcher in Spalte finden (theoretisch, für Animation)
     let holeRows = [];
 
     for(let row = 7; row >= 0; row--) {
